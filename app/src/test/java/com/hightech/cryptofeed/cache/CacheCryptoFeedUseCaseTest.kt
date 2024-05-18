@@ -3,6 +3,7 @@ package com.hightech.cryptofeed.cache
 import app.cash.turbine.test
 import com.hightech.cryptofeed.domain.CoinInfo
 import com.hightech.cryptofeed.domain.CryptoFeed
+import com.hightech.cryptofeed.domain.LoadCryptoFeedResult
 import com.hightech.cryptofeed.domain.Raw
 import com.hightech.cryptofeed.domain.Usd
 import io.mockk.confirmVerified
@@ -175,6 +176,100 @@ class CacheCryptoFeedUseCaseTest {
             deleteExactly = 1,
             insertExactly = 1
         )
+    }
+
+    @Test
+    fun testLoad_DateTenMinutesAgo_SuccessfulLoadCryptoFeed() = runBlocking {
+        val expectedResult = listOf(
+            CryptoFeed(
+                CoinInfo("1", "BTC", "Bitcoin", "imageUrl"),
+                Raw(Usd(1.0, 1F)),
+            ),
+            CryptoFeed(
+                CoinInfo("2", "BTC 2", "Bitcoin 2", "imageUrl"),
+                Raw(Usd(2.0, 2F)),
+            ),
+        )
+
+        val tenMinutesAgo = Date(timestamp.time - 600000)
+        every { store.load() } returns flowOf(RoomResult.Success(cryptoFeedLocal, tenMinutesAgo))
+
+        sut.load().test {
+            when(val actualResult = awaitItem()) {
+                is LoadCryptoFeedResult.Failure -> {}
+                is LoadCryptoFeedResult.Success -> {
+                    assertEquals(expectedResult, actualResult.cryptoFeed)
+                }
+            }
+            awaitComplete()
+        }
+        verify(exactly = 1) {
+            store.load()
+        }
+
+    }
+
+    @Test
+    fun testLoad_DateTenMinutesAgo_EmptyLoadCryptoFeed() = runBlocking {
+        val expectedResult = emptyList<CryptoFeed>()
+
+        val tenMinutesAgo = Date(timestamp.time - 600000)
+        every { store.load() } returns flowOf(RoomResult.Success(emptyList(), tenMinutesAgo))
+
+        sut.load().test {
+            when(val actualResult = awaitItem()) {
+                is LoadCryptoFeedResult.Failure -> {}
+                is LoadCryptoFeedResult.Success -> {
+                    assertEquals(expectedResult, actualResult.cryptoFeed)
+                }
+            }
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun testLoad_DateYesterday_OnFailedLoadCryptoFeed() = runBlocking {
+        val yesterday = Date(timestamp.time - 8640001)
+        every { store.load() } returns flowOf(RoomResult.Success(cryptoFeedLocal, yesterday))
+        every { store.deleteCache() } returns flowOf(null)
+
+        sut.load().test {
+            when (val actualResult = awaitItem()) {
+                is LoadCryptoFeedResult.Failure -> {
+                    assertEquals(NotFound::class.java, actualResult.exception::class.java)
+                }
+                is LoadCryptoFeedResult.Success -> {}
+            }
+            awaitComplete()
+        }
+
+        verify(exactly = 1) {
+            store.load()
+        }
+
+        verify(exactly = 1) {
+            store.deleteCache()
+        }
+    }
+
+    @Test
+    fun testLoad_DatabaseError_OnFailedLoadCryptoFeed() = runBlocking {
+        every { store.load() } returns flowOf(RoomResult.Failure(Exception()))
+        every { store.deleteCache() } returns flowOf(null)
+
+        sut.load().test {
+            when (val actualResult = awaitItem()) {
+                is LoadCryptoFeedResult.Failure -> {
+                    assertEquals(DatabaseError::class.java, actualResult.exception::class.java)
+                }
+                is LoadCryptoFeedResult.Success -> {}
+            }
+            awaitComplete()
+        }
+
+        verify(exactly = 1) {
+            store.load()
+        }
     }
 
     private fun expect(
