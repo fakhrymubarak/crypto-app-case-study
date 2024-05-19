@@ -41,6 +41,15 @@ class CacheCryptoFeedUseCaseTest {
     }
 
     @Test
+    fun testInitDoesNotLoadCacheUponCreation() {
+        verify(exactly = 0) {
+            store.load()
+        }
+
+        confirmVerified(store)
+    }
+
+    @Test
     fun testSaveRequestsCacheDeletion() = runBlocking {
         every {
             store.deleteCache()
@@ -238,6 +247,7 @@ class CacheCryptoFeedUseCaseTest {
                 is LoadCryptoFeedResult.Failure -> {
                     assertEquals(NotFound::class.java, actualResult.exception::class.java)
                 }
+
                 is LoadCryptoFeedResult.Success -> {}
             }
             awaitComplete()
